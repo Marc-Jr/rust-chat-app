@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-// Handle incoming client messages
 fn handle_client(mut stream: TcpStream, clients: Arc<Mutex<HashMap<String, TcpStream>>>) {
     let mut buffer = [0; 512];
     let mut name = String::new();
@@ -16,13 +15,17 @@ fn handle_client(mut stream: TcpStream, clients: Arc<Mutex<HashMap<String, TcpSt
     }
 
     name = String::from_utf8_lossy(&buffer).to_string();
-    
-    let mut clients = clients.lock().unwrap();
-    clients.insert(name.clone(), stream.try_clone().unwrap());
 
+    // Lock the clients mutex to insert the new client
+    {
+        let mut clients = clients.lock().unwrap();
+        clients.insert(name.clone(), stream.try_clone().unwrap());
+    }
+
+    // Keep listening for incoming messages
     loop {
         let n = match stream.read(&mut buffer) {
-            Ok(0) => break,
+            Ok(0) => break, // Connection closed
             Ok(n) => n,
             Err(e) => {
                 println!("Failed to read from stream: {}", e);
@@ -31,15 +34,24 @@ fn handle_client(mut stream: TcpStream, clients: Arc<Mutex<HashMap<String, TcpSt
         };
 
         let msg = String::from_utf8_lossy(&buffer[..n]).to_string();
-        for (client_name, client_stream) in clients.iter() {
-            if client_name != &name {
-                let _ = client_stream.write(msg.as_bytes());
+        
+        // Lock the mutex only once and use it for the duration of the loop
+        {
+            let clients = clients.lock().unwrap(); // Lock the mutex for broadcasting
+            for (client_name, mut client_stream) in clients.iter() {
+                if client_name != &name {
+                    let _ = client_stream.write(msg.as_bytes());
+                }
             }
         }
     }
 
+    // Client disconnected, remove from the list
     println!("{} disconnected.", name);
-    clients.lock().unwrap().remove(&name);
+    {
+        let mut clients = clients.lock().unwrap();
+        clients.remove(&name);
+    }
 }
 
 fn main() {
@@ -48,6 +60,7 @@ fn main() {
 
     println!("Server started on port 8080");
 
+    // Accept incoming client connections
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {

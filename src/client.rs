@@ -28,7 +28,7 @@ fn handle_output(mut stream: TcpStream) {
 }
 
 fn main() {
-    let stream = TcpStream::connect("127.0.0.1:8080").unwrap();
+    let mut stream = TcpStream::connect("127.0.0.1:8080").unwrap();
     
     println!("Enter your name: ");
     let mut name = String::new();
