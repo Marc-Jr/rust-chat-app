@@ -1,45 +1,44 @@
 use std::io::{self, Write, Read};
 use std::net::TcpStream;
-use std::thread;
-
-fn handle_input(mut stream: TcpStream) {
-    let mut input = String::new();
-    loop {
-        input.clear();
-        io::stdin().read_line(&mut input).unwrap();
-        stream.write(input.trim().as_bytes()).unwrap();
-    }
-}
-
-fn handle_output(mut stream: TcpStream) {
-    let mut buffer = [0; 512];
-    loop {
-        match stream.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(n) => {
-                println!("{}", String::from_utf8_lossy(&buffer[..n]));
-            }
-            Err(e) => {
-                println!("Error reading from stream: {}", e);
-                break;
-            }
-        }
-    }
-}
+use std::str;
 
 fn main() {
-    let mut stream = TcpStream::connect("127.0.0.1:8080").unwrap();
-    
-    println!("Enter your name: ");
-    let mut name = String::new();
-    io::stdin().read_line(&mut name).unwrap();
-    let name = name.trim();
+    let mut stream = TcpStream::connect("127.0.0.1:8080").expect("Couldn't connect to the server");
 
-    // Send name to server
-    stream.write(name.as_bytes()).unwrap();
+    loop {
+        // Prompt for username and password
+        let mut username = String::new();
+        let mut password = String::new();
 
-    // Start threads for input and output
-    let stream_clone = stream.try_clone().unwrap();
-    thread::spawn(move || handle_input(stream_clone));
-    handle_output(stream);
+        print!("Enter your username: ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut username).unwrap();
+        username = username.trim().to_string(); // Remove newline
+
+        print!("Enter your password: ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut password).unwrap();
+        password = password.trim().to_string(); // Remove newline
+
+        // Send the credentials to the server
+        let credentials = format!("{}:{}", username, password);
+        stream.write(credentials.as_bytes()).expect("Failed to send credentials");
+
+        // Wait for server response
+        let mut buffer = [0; 512];
+        let n = stream.read(&mut buffer).expect("Failed to read response");
+
+        // Convert to UTF-8 and display the server's response
+        let response = str::from_utf8(&buffer[..n]).expect("Failed to parse response");
+        println!("Server Response: {}", response); // Print server response
+
+        // Check if authentication was successful
+        if response.contains("authenticated") {
+            break; // Exit the loop on successful authentication
+        } else {
+            println!("Please try again.\n");
+            // Reset the connection and try again (client will reconnect on next loop)
+            stream = TcpStream::connect("127.0.0.1:8080").expect("Couldn't reconnect to the server");
+        }
+    }
 }
