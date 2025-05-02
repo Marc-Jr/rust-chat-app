@@ -1,44 +1,63 @@
 use std::io::{self, Write, Read};
 use std::net::TcpStream;
 use std::str;
+use std::thread;
 
-fn main() {
+pub fn start() {
     let mut stream = TcpStream::connect("127.0.0.1:8080").expect("Couldn't connect to the server");
 
     loop {
-        // Prompt for username and password
         let mut username = String::new();
         let mut password = String::new();
 
         print!("Enter your username: ");
         io::stdout().flush().unwrap();
         io::stdin().read_line(&mut username).unwrap();
-        username = username.trim().to_string(); // Remove newline
+        username = username.trim().to_string();
 
         print!("Enter your password: ");
         io::stdout().flush().unwrap();
         io::stdin().read_line(&mut password).unwrap();
-        password = password.trim().to_string(); // Remove newline
+        password = password.trim().to_string();
 
-        // Send the credentials to the server
-        let credentials = format!("{}:{}", username, password);
+        let credentials = format!("{}:{}\n", username, password);
         stream.write(credentials.as_bytes()).expect("Failed to send credentials");
 
-        // Wait for server response
         let mut buffer = [0; 512];
         let n = stream.read(&mut buffer).expect("Failed to read response");
-
-        // Convert to UTF-8 and display the server's response
         let response = str::from_utf8(&buffer[..n]).expect("Failed to parse response");
-        println!("Server Response: {}", response); // Print server response
+        println!("Server Response: {}", response);
 
-        // Check if authentication was successful
         if response.contains("authenticated") {
-            break; // Exit the loop on successful authentication
+            break;
         } else {
             println!("Please try again.\n");
-            // Reset the connection and try again (client will reconnect on next loop)
             stream = TcpStream::connect("127.0.0.1:8080").expect("Couldn't reconnect to the server");
         }
+    }
+
+    // Spawn thread to listen for messages
+    let mut read_stream = stream.try_clone().unwrap();
+    thread::spawn(move || loop {
+        let mut buffer = [0; 512];
+        match read_stream.read(&mut buffer) {
+            Ok(n) if n > 0 => {
+                let response = str::from_utf8(&buffer[..n]).unwrap();
+                println!("\n>> {}", response.trim());
+                print!("Enter message (or @user): ");
+                io::stdout().flush().unwrap();
+            }
+            _ => break,
+        }
+    });
+
+    loop {
+        let mut message = String::new();
+        print!("Enter message (or @username): ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut message).unwrap();
+
+        message.push('\n');
+        stream.write(message.as_bytes()).expect("Failed to send message");
     }
 }
